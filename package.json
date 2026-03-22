@@ -1,0 +1,15 @@
+{
+  "name": "obsidian-image-uploader-button",
+  "version": "0.1.0",
+  "description": "Obsidian plugin: upload local/pasted images in active note via CLI and rewrite links.",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp dist/main.js main.js",
+    "dev": "tsc -p tsconfig.json -w"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "obsidian": "^1.7.0",
+    "typescript": "^5.7.3"
+  }
+}

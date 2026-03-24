@@ -1,5 +1,5 @@
 {
-  "uploadCommand": "/Applications/PloyS3.app/Contents/Resources/bin/ploys3",
+  "uploadCommand": "",
   "commandCwd": "",
   "processWikiEmbeds": true,
   "uploadArgs": [

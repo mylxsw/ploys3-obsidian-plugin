@@ -9,9 +9,15 @@ import {
 } from "obsidian";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access } from "node:fs/promises";
+import { access, constants } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_PLOYS3_LOCATIONS = [
+	join(homedir(), ".local/bin/ploys3"),
+	"/Applications/PloyS3.app/Resources/bin/ploys3",
+];
 
 interface ImageUploaderSettings {
 	/**
@@ -41,7 +47,7 @@ interface ImageUploaderSettings {
 }
 
 const DEFAULT_SETTINGS: ImageUploaderSettings = {
-	uploadCommand: "/Applications/PloyS3.app/Resources/bin/ploys3",
+	uploadCommand: "",
 	commandCwd: "",
 	processWikiEmbeds: true,
 	uploadArgs: ["upload"],
@@ -122,15 +128,55 @@ async function resolveTargetToFile(app: App, note: TFile, rawTarget: string): Pr
 	return null;
 }
 
-async function runUploadCommand(settings: ImageUploaderSettings, vaultRoot: string, absoluteImagePath: string): Promise<string> {
-	if (!settings.uploadCommand.trim()) {
-		throw new Error("Upload command is empty. Configure it in plugin settings.");
+function expandUserPath(input: string): string {
+	const trimmed = input.trim();
+	if (!trimmed) return "";
+	if (trimmed === "~") return homedir();
+	if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
+	return trimmed;
+}
+
+async function canExecute(path: string): Promise<boolean> {
+	try {
+		await access(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
 	}
+}
+
+async function resolveUploadCommandPath(settings: ImageUploaderSettings): Promise<string> {
+	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const addCandidate = (value: string) => {
+		const normalized = expandUserPath(value);
+		if (!normalized || seen.has(normalized)) return;
+		seen.add(normalized);
+		candidates.push(normalized);
+	};
+
+	addCandidate(settings.uploadCommand);
+	for (const path of DEFAULT_PLOYS3_LOCATIONS) {
+		addCandidate(path);
+	}
+
+	for (const candidate of candidates) {
+		if (await canExecute(candidate)) {
+			return candidate;
+		}
+	}
+
+	throw new Error(`PloyS3 executable not found. Tried: ${candidates.join(", ")}`);
+}
+
+async function runUploadCommand(settings: ImageUploaderSettings, vaultRoot: string, absoluteImagePath: string): Promise<string> {
+	const commandPath = await resolveUploadCommandPath(settings);
 
 	// Execute: <uploadCommand> <absoluteImagePath>
 	// The command must print the final URL to stdout.
 	const args = [...(settings.uploadArgs ?? []), absoluteImagePath];
-	const { stdout, stderr } = await execFileAsync(settings.uploadCommand, args, { 
+	const { stdout, stderr } = await execFileAsync(commandPath, args, {
 		cwd: settings.commandCwd.trim() ? settings.commandCwd.trim() : vaultRoot,
 		windowsHide: true,
 		maxBuffer: 10 * 1024 * 1024,
@@ -187,22 +233,18 @@ export default class ImageUploaderPlugin extends Plugin {
 			return;
 		}
 
-		// Check if the upload command (PloyS3) is installed
-		const cmd = this.settings.uploadCommand.trim();
-		if (cmd) {
-			try {
-				await access(cmd);
-			} catch {
-				const frag = new DocumentFragment();
-				frag.appendText("PloyS3 is not installed. Please install it first: ");
-				const link = frag.createEl("a", {
-					text: "https://github.com/mylxsw/ploys3",
-					href: "https://github.com/mylxsw/ploys3",
-				});
-				link.style.color = "var(--text-accent)";
-				new Notice(frag, 10000);
-				return;
-			}
+		try {
+			await resolveUploadCommandPath(this.settings);
+		} catch {
+			const frag = new DocumentFragment();
+			frag.appendText("PloyS3 is not installed. Please install it first: ");
+			const link = frag.createEl("a", {
+				text: "https://github.com/mylxsw/ploys3",
+				href: "https://github.com/mylxsw/ploys3",
+			});
+			link.style.color = "var(--text-accent)";
+			new Notice(frag, 10000);
+			return;
 		}
 
 		try {
@@ -322,7 +364,7 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Image Uploader Button" });
+		containerEl.createEl("h2", { text: "ploys3-uploader" });
 
 		new Setting(containerEl)
 			.setName("Upload command")
@@ -331,7 +373,7 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("/Applications/PloyS3.app/Resources/bin/ploys3")
+					.setPlaceholder("~/.local/bin/ploys3")
 					.setValue(this.plugin.settings.uploadCommand)
 					.onChange(async (value) => {
 						this.plugin.settings.uploadCommand = value;

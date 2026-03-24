@@ -1,75 +1,29 @@
-# Obsidian Image Uploader Button
+# ploys3-uploader
 
-An Obsidian desktop plugin that adds an **Upload** button. When clicked, it:
+`ploys3-uploader` is an Obsidian desktop plugin for the PloyS3 App.
 
-1. Scans the **currently active markdown note** for images.
-2. Finds images that are **local files** (including clipboard-pasted images, since those are saved as local attachments).
-3. Skips images that already point to **network/remote URLs** (e.g. `https://...`).
-4. Uploads each local image by running a user-configured **CLI command**.
-5. Rewrites the note by replacing the image targets with the returned URLs, then overwrites the original note.
+It is designed for image upload workflows that target S3-compatible storage servers. The plugin scans the currently active note, finds local image references such as pasted attachments, uploads those images through the PloyS3 App upload flow, and then rewrites the note so the original local image links become remote image URLs.
 
-## What the upload command must do
+When locating the PloyS3 executable, the plugin first checks a user-specified path if one is provided. If that path does not exist, it falls back to these default locations: `~/.local/bin/ploys3` and `/Applications/PloyS3.app/Resources/bin/ploys3`.
 
-A minimal example script is included: `uploader-example.sh` (for local testing only).
+## What It Does
 
-The plugin executes:
+- Scans the active Markdown note for image references.
+- Detects local image files, including pasted or attached images stored in the vault.
+- Skips image links that already point to remote resources.
+- Uploads local images to an S3 server through the PloyS3 App.
+- Rewrites image links in the note after upload so the content references the returned remote URLs.
 
-- `<uploadCommand> <uploadArgs...> <absolute_image_path>`
+## Supported Image References
 
-Default config (PloyS3):
+- Standard Markdown image links such as `![alt](image.png)`
+- Wiki-style image embeds such as `![[image.png]]`
 
-- `uploadCommand`: `/Applications/PloyS3.app/Resources/bin/ploys3`
-- `uploadArgs`: `upload`
+## Use Case
 
-So it becomes:
+This plugin is intended for users who manage notes in Obsidian and want a smoother way to move locally referenced images to S3-backed storage using PloyS3 App, especially for publishing, syncing, or sharing notes with externally accessible image URLs.
 
-- `/Applications/PloyS3.app/Resources/bin/ploys3 upload /absolute/path/to/image.png`
+## Notes
 
-It expects the command to print the **final image URL** to **stdout** (first non-empty line).
-
-Examples of acceptable stdout:
-
-- `https://img.example.com/abc.png`
-- `https://cdn.example.com/abc.png\n`
-
-If stdout is empty, the plugin treats it as a failure.
-
-## Supported image syntaxes
-
-- Standard markdown: `![alt](relative/or/linked/path.png)`
-- Wiki embeds (configurable): `![[path.png]]` and `![[path.png|alias]]`
-
-## Skipped (not processed)
-
-- `http://...`
-- `https://...`
-- `data:...`
-- `file://...`
-
-## Install (dev)
-
-1. Copy this folder into your vault:
-
-   `.obsidian/plugins/image-uploader-button/`
-
-2. From the plugin folder:
-
-   - `npm install`
-   - `npm run build`
-
-3. Enable the plugin in Obsidian Settings.
-
-## Configure
-
-Obsidian → Settings → Community plugins → **Image Uploader Button**:
-
-- **Upload command**: path/name of your uploader executable
-- **Command working directory** (optional)
-- **Process wiki embeds** toggle
-
-## Notes / limitations
-
-- Desktop only (uses Node.js `child_process`).
-- Upload is sequential to avoid spamming your image bed.
-- Link replacement is based on Obsidian's resolver (`metadataCache.getFirstLinkpathDest`).
-
+- Desktop only.
+- Focused on image upload scenarios for S3-compatible object storage.

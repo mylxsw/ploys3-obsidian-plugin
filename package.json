@@ -1,7 +1,8 @@
 {
-  "name": "obsidian-image-uploader-button",
+  "name": "ploys3-uploader",
   "version": "0.1.0",
-  "description": "Obsidian plugin: upload local/pasted images in active note via CLI and rewrite links.",
+  "description": "Obsidian upload plugin for PloyS3 App, focused on uploading note images to S3-compatible storage and rewriting links.",
+  "license": "MIT",
   "main": "main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && cp dist/main.js main.js",

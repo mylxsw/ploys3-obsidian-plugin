@@ -1,6 +1,6 @@
 {
   "id": "ploys3-uploader",
-  "name": "ploys3-uploader",
+  "name": "PloyS3 Uploader",
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
   "description": "Upload plugin for PloyS3 App that uploads local note images to S3-compatible storage and rewrites image links.",

@@ -18,6 +18,10 @@ const DEFAULT_PLOYS3_LOCATIONS = [
 	join(homedir(), ".local/bin/ploys3"),
 	"/Applications/PloyS3.app/Resources/bin/ploys3",
 ];
+interface DesktopVaultAdapterLike {
+	basePath?: string;
+	getFullPath?(path: string): string;
+}
 
 interface ImageUploaderSettings {
 	/**
@@ -98,14 +102,14 @@ function decodeMarkdownLinkTarget(target: string): string {
 	}
 }
 
-async function getVaultRoot(app: App): Promise<string> {
-	// @ts-expect-error Obsidian exposes vault.adapter base path on desktop
-	const basePath: string | undefined = app.vault.adapter?.basePath;
+function getVaultRoot(app: App): string {
+	const adapter = app.vault.adapter as DesktopVaultAdapterLike | undefined;
+	const basePath = adapter?.basePath;
 	if (!basePath) throw new Error("Cannot determine vault base path (desktop only).");
 	return basePath;
 }
 
-async function resolveTargetToFile(app: App, note: TFile, rawTarget: string): Promise<TFile | null> {
+function resolveTargetToFile(app: App, note: TFile, rawTarget: string): TFile | null {
 	// Handles both markdown and wiki link targets.
 	let target = rawTarget.trim();
 	target = stripAngleBrackets(target);
@@ -170,6 +174,17 @@ async function resolveUploadCommandPath(settings: ImageUploaderSettings): Promis
 	throw new Error(`PloyS3 executable not found. Tried: ${candidates.join(", ")}`);
 }
 
+function showInstallNotice(): void {
+	const frag = new DocumentFragment();
+	frag.appendText("PloyS3 is not installed. Please install it first: ");
+	const link = frag.createEl("a", {
+		text: "https://github.com/mylxsw/ploys3",
+		href: "https://github.com/mylxsw/ploys3",
+	});
+	link.setCssProps({ color: "var(--text-accent)" });
+	new Notice(frag, 10000);
+}
+
 async function runUploadCommand(settings: ImageUploaderSettings, vaultRoot: string, absoluteImagePath: string): Promise<string> {
 	const commandPath = await resolveUploadCommandPath(settings);
 
@@ -196,26 +211,30 @@ async function runUploadCommand(settings: ImageUploaderSettings, vaultRoot: stri
 export default class ImageUploaderPlugin extends Plugin {
 	settings!: ImageUploaderSettings;
 
-	async onload() {
+	onload() {
+		void this.initialize();
+	}
+
+	onunload() {
+		// nothing
+	}
+
+	private async initialize(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
-		this.addRibbonIcon("upload", "Upload local images in current note", async () => {
-			await this.handleUploadClicked();
+		this.addRibbonIcon("upload", "Upload local images in current note", () => {
+			void this.handleUploadClicked();
 		});
 
 		this.addCommand({
 			id: "upload-images-in-active-note",
 			name: "Upload local images in active note",
-			callback: async () => {
-				await this.handleUploadClicked();
+			callback: () => {
+				void this.handleUploadClicked();
 			},
 		});
 
 		this.addSettingTab(new ImageUploaderSettingTab(this.app, this));
-	}
-
-	async onunload() {
-		// nothing
 	}
 
 	async saveSettings() {
@@ -236,14 +255,7 @@ export default class ImageUploaderPlugin extends Plugin {
 		try {
 			await resolveUploadCommandPath(this.settings);
 		} catch {
-			const frag = new DocumentFragment();
-			frag.appendText("PloyS3 is not installed. Please install it first: ");
-			const link = frag.createEl("a", {
-				text: "https://github.com/mylxsw/ploys3",
-				href: "https://github.com/mylxsw/ploys3",
-			});
-			link.style.color = "var(--text-accent)";
-			new Notice(frag, 10000);
+			showInstallNotice();
 			return;
 		}
 
@@ -256,7 +268,7 @@ export default class ImageUploaderPlugin extends Plugin {
 	}
 
 	private async processNote(note: TFile): Promise<void> {
-		const vaultRoot = await getVaultRoot(this.app);
+		const vaultRoot = getVaultRoot(this.app);
 		const original = await this.app.vault.read(note);
 
 		// Collect targets from the note.
@@ -282,7 +294,7 @@ export default class ImageUploaderPlugin extends Plugin {
 		const resolvedFiles: TFile[] = [];
 		const seen = new Set<string>();
 		for (const t of allTargets) {
-			const f = await resolveTargetToFile(this.app, note, t);
+			const f = resolveTargetToFile(this.app, note, t);
 			if (!f) continue;
 			if (seen.has(f.path)) continue;
 			seen.add(f.path);
@@ -299,8 +311,8 @@ export default class ImageUploaderPlugin extends Plugin {
 		// Upload sequentially to keep it simple and avoid hammering image beds.
 		const mapOldToNew = new Map<string, string>();
 		for (const imgFile of resolvedFiles) {
-			// @ts-expect-error Obsidian exposes adapter full path on desktop
-			const fullPath: string | undefined = this.app.vault.adapter?.getFullPath?.(imgFile.path);
+			const adapter = this.app.vault.adapter as DesktopVaultAdapterLike | undefined;
+			const fullPath = adapter?.getFullPath?.(imgFile.path);
 			const absPath = fullPath ?? `${vaultRoot}/${imgFile.path}`;
 			const url = await runUploadCommand(this.settings, vaultRoot, absPath);
 			mapOldToNew.set(imgFile.path, url);
@@ -364,10 +376,10 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "ploys3-uploader" });
+		new Setting(containerEl).setName("PloyS3 uploader").setHeading();
 
 		new Setting(containerEl)
-			.setName("Upload command")
+			.setName("Upload command path")
 			.setDesc(
 				"CLI executable to run. It will be called as: <command> <uploadArgs...> <absolute_image_path>. The command must print the uploaded image URL to stdout."
 			)
@@ -382,8 +394,8 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Upload args")
-			.setDesc("Arguments inserted before the image path. Default for PloyS3 is: upload")
+			.setName("Upload arguments")
+			.setDesc("Arguments inserted before the image path. Default for PloyS3 is: upload.")
 			.addText((text) =>
 				text
 					.setPlaceholder("upload")
@@ -398,8 +410,8 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Command working directory (optional)")
-			.setDesc("If empty, uses the vault root.")
+			.setName("Command working directory")
+			.setDesc("Optional. If empty, the vault root is used.")
 			.addText((text) =>
 				text
 					.setPlaceholder("/path/to/vault")
@@ -411,8 +423,8 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Process wiki embeds (![[...]])")
-			.setDesc("If disabled, only standard markdown image links ![]() are processed.")
+			.setName("Process wiki embeds")
+			.setDesc("If disabled, only standard Markdown image links ![]() are processed.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.processWikiEmbeds).onChange(async (value) => {
 					this.plugin.settings.processWikiEmbeds = value;

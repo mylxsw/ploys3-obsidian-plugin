@@ -1,6 +1,6 @@
 # PloyS3 Uploader
 
-`PloyS3 Uploader` is an Obsidian desktop plugin for the PloyS3 App.
+`PloyS3 Uploader` is an Obsidian desktop plugin for the [PloyS3](https://github.com/mylxsw/ploys3) App.
 
 It is designed for image upload workflows that target S3-compatible storage servers. The plugin scans the currently active note, finds local image references such as pasted attachments, uploads those images through the PloyS3 App upload flow, and then rewrites the note so the original local image links become remote image URLs.
 

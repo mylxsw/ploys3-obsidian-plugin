@@ -4,9 +4,15 @@ const obsidian_1 = require("obsidian");
 const node_child_process_1 = require("node:child_process");
 const node_util_1 = require("node:util");
 const promises_1 = require("node:fs/promises");
+const node_os_1 = require("node:os");
+const node_path_1 = require("node:path");
 const execFileAsync = (0, node_util_1.promisify)(node_child_process_1.execFile);
+const DEFAULT_PLOYS3_LOCATIONS = [
+    (0, node_path_1.join)((0, node_os_1.homedir)(), ".local/bin/ploys3"),
+    "/Applications/PloyS3.app/Resources/bin/ploys3",
+];
 const DEFAULT_SETTINGS = {
-    uploadCommand: "/Applications/PloyS3.app/Resources/bin/ploys3",
+    uploadCommand: "",
     commandCwd: "",
     processWikiEmbeds: true,
     uploadArgs: ["upload"],
@@ -79,14 +85,52 @@ async function resolveTargetToFile(app, note, rawTarget) {
         return af;
     return null;
 }
-async function runUploadCommand(settings, vaultRoot, absoluteImagePath) {
-    if (!settings.uploadCommand.trim()) {
-        throw new Error("Upload command is empty. Configure it in plugin settings.");
+function expandUserPath(input) {
+    const trimmed = input.trim();
+    if (!trimmed)
+        return "";
+    if (trimmed === "~")
+        return (0, node_os_1.homedir)();
+    if (trimmed.startsWith("~/"))
+        return (0, node_path_1.join)((0, node_os_1.homedir)(), trimmed.slice(2));
+    return trimmed;
+}
+async function canExecute(path) {
+    try {
+        await (0, promises_1.access)(path, promises_1.constants.X_OK);
+        return true;
     }
+    catch {
+        return false;
+    }
+}
+async function resolveUploadCommandPath(settings) {
+    const candidates = [];
+    const seen = new Set();
+    const addCandidate = (value) => {
+        const normalized = expandUserPath(value);
+        if (!normalized || seen.has(normalized))
+            return;
+        seen.add(normalized);
+        candidates.push(normalized);
+    };
+    addCandidate(settings.uploadCommand);
+    for (const path of DEFAULT_PLOYS3_LOCATIONS) {
+        addCandidate(path);
+    }
+    for (const candidate of candidates) {
+        if (await canExecute(candidate)) {
+            return candidate;
+        }
+    }
+    throw new Error(`PloyS3 executable not found. Tried: ${candidates.join(", ")}`);
+}
+async function runUploadCommand(settings, vaultRoot, absoluteImagePath) {
+    const commandPath = await resolveUploadCommandPath(settings);
     // Execute: <uploadCommand> <absoluteImagePath>
     // The command must print the final URL to stdout.
     const args = [...(settings.uploadArgs ?? []), absoluteImagePath];
-    const { stdout, stderr } = await execFileAsync(settings.uploadCommand, args, {
+    const { stdout, stderr } = await execFileAsync(commandPath, args, {
         cwd: settings.commandCwd.trim() ? settings.commandCwd.trim() : vaultRoot,
         windowsHide: true,
         maxBuffer: 10 * 1024 * 1024,
@@ -133,23 +177,19 @@ class ImageUploaderPlugin extends obsidian_1.Plugin {
             new obsidian_1.Notice("Active file is not a markdown note.");
             return;
         }
-        // Check if the upload command (PloyS3) is installed
-        const cmd = this.settings.uploadCommand.trim();
-        if (cmd) {
-            try {
-                await (0, promises_1.access)(cmd);
-            }
-            catch {
-                const frag = new DocumentFragment();
-                frag.appendText("PloyS3 is not installed. Please install it first: ");
-                const link = frag.createEl("a", {
-                    text: "https://github.com/mylxsw/ploys3",
-                    href: "https://github.com/mylxsw/ploys3",
-                });
-                link.style.color = "var(--text-accent)";
-                new obsidian_1.Notice(frag, 10000);
-                return;
-            }
+        try {
+            await resolveUploadCommandPath(this.settings);
+        }
+        catch {
+            const frag = new DocumentFragment();
+            frag.appendText("PloyS3 is not installed. Please install it first: ");
+            const link = frag.createEl("a", {
+                text: "https://github.com/mylxsw/ploys3",
+                href: "https://github.com/mylxsw/ploys3",
+            });
+            link.style.color = "var(--text-accent)";
+            new obsidian_1.Notice(frag, 10000);
+            return;
         }
         try {
             await this.processNote(active);
@@ -256,12 +296,12 @@ class ImageUploaderSettingTab extends obsidian_1.PluginSettingTab {
     display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl("h2", { text: "Image Uploader Button" });
+        containerEl.createEl("h2", { text: "ploys3-uploader" });
         new obsidian_1.Setting(containerEl)
             .setName("Upload command")
             .setDesc("CLI executable to run. It will be called as: <command> <uploadArgs...> <absolute_image_path>. The command must print the uploaded image URL to stdout.")
             .addText((text) => text
-            .setPlaceholder("/Applications/PloyS3.app/Resources/bin/ploys3")
+            .setPlaceholder("~/.local/bin/ploys3")
             .setValue(this.plugin.settings.uploadCommand)
             .onChange(async (value) => {
             this.plugin.settings.uploadCommand = value;

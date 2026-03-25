@@ -376,10 +376,8 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName("PloyS3 uploader").setHeading();
-
 		new Setting(containerEl)
-			.setName("Upload command path")
+			.setName("Upload command")
 			.setDesc(
 				"CLI executable to run. It will be called as: <command> <uploadArgs...> <absolute_image_path>. The command must print the uploaded image URL to stdout."
 			)
@@ -424,7 +422,7 @@ class ImageUploaderSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Process wiki embeds")
-			.setDesc("If disabled, only standard Markdown image links ![]() are processed.")
+			.setDesc("If disabled, only standard markdown image links ![]() are processed.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.processWikiEmbeds).onChange(async (value) => {
 					this.plugin.settings.processWikiEmbeds = value;
